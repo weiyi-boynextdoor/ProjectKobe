@@ -1,5 +1,5 @@
 import ollama
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import torch
 import soundfile as sf
 from qwen_tts import Qwen3TTSModel
@@ -72,9 +72,10 @@ def api_chat():
     print("Assistant response:", response)
     print("Generating speech...")
     wavs, sr = tts_model.generate_voice_clone(text=response, voice_clone_prompt=tts_prompt)
-    sf.write(f"./audio_output/response_{session_id}.wav", wavs[0], sr)
-    print(f"Speech saved to ./audio_output/response_{session_id}.wav")
-    return jsonify({"response": response})
+    voice_file = f"response_{session_id}.wav"
+    sf.write(f"./audio_output/{voice_file}", wavs[0], sr)
+    print(f"Speech saved to ./audio_output/{voice_file}")
+    return jsonify({"response": response, "voice_file": voice_file})
 
 @app.route("/api/create_session", methods=["POST"])
 def api_create_session():
@@ -84,13 +85,18 @@ def api_create_session():
     session_id = session_manager.create_session(model_name, system_prompt)
     return jsonify({"session_id": session_id})
 
+@app.route('/download_voice/<filename>')
+def download_voice(filename):
+    # as_attachment=True 会强制浏览器下载，
+    # 但对于 UE5 来说，设为 False 直接流式读取内容通常更方便
+    return send_from_directory("audio_output", filename, as_attachment=False)
+
 def voice_clone():
     ref_audio = "./audio_input/Mamba.wav"
     ref_text  = "Man! ha ha ha ha ha ha ha. What can I say? Mamba out!"
     prompt = tts_model.create_voice_clone_prompt(ref_audio, ref_text)
     tts_prompt.append(prompt)
     return prompt
-
 
 if __name__ == "__main__":
     tts_prompt = voice_clone()
