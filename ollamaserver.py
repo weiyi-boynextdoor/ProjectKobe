@@ -1,18 +1,10 @@
 import ollama
 from flask import Flask, request, jsonify, send_from_directory
 import torch
-import soundfile as sf
 import time
-from qwen_tts import Qwen3TTSModel
+from tts import Qwen3TTS
 
-tts_model = Qwen3TTSModel.from_pretrained(
-    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-    device_map="cuda:0",
-    dtype=torch.bfloat16,
-    # attn_implementation="flash_attention_2",
-)
-
-tts_prompt = []
+tts = Qwen3TTS()
 
 class OllamaSession:
     def __init__(self, session_id, model_name, system_prompt=""):
@@ -71,14 +63,12 @@ def api_chat():
     session = session_manager.get_session(session_id)
     response = session.chat(user_message)
     print("Assistant response:", response)
-    print("Generating speech...")
+    print("Generating voice...")
     start_time = time.time()
-    wavs, sr = tts_model.generate_voice_clone(text=response, voice_clone_prompt=tts_prompt)
+    voice_file = f"response_{session_id}.wav"
+    tts.generate_voice_clone(response, f"audio_output/{voice_file}")
     elapsed_time = time.time() - start_time
     print(f"generate_voice_clone took {elapsed_time:.2f} seconds")
-    voice_file = f"response_{session_id}.wav"
-    sf.write(f"./audio_output/{voice_file}", wavs[0], sr)
-    print(f"Speech saved to ./audio_output/{voice_file}")
     return jsonify({"response": response, "voice_file": voice_file})
 
 @app.route("/api/create_session", methods=["POST"])
@@ -98,10 +88,8 @@ def download_voice(filename):
 def voice_clone():
     ref_audio = "./audio_input/Mamba.wav"
     ref_text  = "Man! ha ha ha ha ha ha ha. What can I say? Mamba out!"
-    prompt = tts_model.create_voice_clone_prompt(ref_audio, ref_text)
-    tts_prompt.append(prompt)
-    return prompt
+    tts.create_voice_clone_prompt(ref_audio, ref_text)
 
 if __name__ == "__main__":
-    tts_prompt = voice_clone()
+    voice_clone()
     app.run(host="0.0.0.0", port=8024)
