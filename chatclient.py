@@ -30,8 +30,8 @@ def send_message(session_id, message):
         if response.status_code == 200:
             print(f"Message sent successfully: {response.json()['response']}")
             voice_file = response.json().get("voice_file")
-            if voice_file:
-                download_voice(voice_file)
+            # if voice_file:
+            #     download_voice(voice_file)
         else:
             print(f"send_message error: {response.status_code}")
 

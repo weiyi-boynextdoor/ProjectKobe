@@ -2,6 +2,7 @@ import ollama
 from flask import Flask, request, jsonify, send_from_directory
 import torch
 import soundfile as sf
+import time
 from qwen_tts import Qwen3TTSModel
 
 tts_model = Qwen3TTSModel.from_pretrained(
@@ -71,7 +72,10 @@ def api_chat():
     response = session.chat(user_message)
     print("Assistant response:", response)
     print("Generating speech...")
+    start_time = time.time()
     wavs, sr = tts_model.generate_voice_clone(text=response, voice_clone_prompt=tts_prompt)
+    elapsed_time = time.time() - start_time
+    print(f"generate_voice_clone took {elapsed_time:.2f} seconds")
     voice_file = f"response_{session_id}.wav"
     sf.write(f"./audio_output/{voice_file}", wavs[0], sr)
     print(f"Speech saved to ./audio_output/{voice_file}")
