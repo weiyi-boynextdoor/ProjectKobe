@@ -43,16 +43,30 @@ def chat_main_loop():
             temperature=1.0
         )
 
-        print("Kobe: ", end='', flush=True)
+        print("Kobe: ", end="", flush=True)
+        assistant_content = ""
+        temp_content = []
         for chunk in response:
             if chunk.choices[0].delta.reasoning_content:
                 print(chunk.choices[0].delta.reasoning_content, end='', flush=True)
 
             if chunk.choices[0].delta.content:
                 print(chunk.choices[0].delta.content, end='', flush=True)
-            assistant_content = {"role": "assistant", "content": chunk.choices[0].delta.content}
-            chat_history.append(assistant_content)
+            temp_content.append(chunk.choices[0].delta.content)
+        assistant_content = "".join(temp_content)
+        chat_history.append({"role": "assistant", "content": assistant_content})
         print()
+
+        response = client.audio.speech(
+            model="glm-tts",
+            input=assistant_content,
+            voice="female",
+            response_format="wav",
+            speed=1.0,
+            volume=1.0
+        )
+        speech_file_path = f"output_{len(chat_history)}.wav"
+        response.stream_to_file(speech_file_path)
 
         user_input = input("You: ")
 
