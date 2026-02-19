@@ -15,7 +15,7 @@ class MinimaxTTS:
     def generate_voice_clone(self, text, output_path, ref_audio=None, ref_text=None, voice_clone_prompt=None):
         payload = {
             "text": text,
-            "model": "speech-2.8-hd",
+            "model": "speech-2.8-turbo",
             "voice_setting": {
                 "voice_id": self.voice_id
             },
