@@ -57,6 +57,7 @@ def chat_main_loop():
         chat_history.append({"role": "assistant", "content": assistant_content})
         print()
 
+        # need subscription, need money!
         response = client.audio.speech(
             model="glm-tts",
             input=assistant_content,
