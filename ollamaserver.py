@@ -1,3 +1,4 @@
+import os
 import ollama
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
@@ -95,8 +96,9 @@ def voice_clone():
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Ollama TTS Server")
-    argparser.add_argument("--tts", type=str, default="qwen3")
+    argparser.add_argument("--tts", type=str, default="minimax")
     args = argparser.parse_args()
     tts_module = tts.get_tts_module(args.tts)
     voice_clone()
+    os.makedirs("audio_output", exist_ok=True)
     app.run(host="0.0.0.0", port=8024)
