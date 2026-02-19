@@ -4,7 +4,7 @@ def get_tts_module(name):
         from .qwen3_tts_module import Qwen3TTS
         return Qwen3TTS()
     elif name == "glm":
-        from .glm_tts_module import client
-        return client
+        from .glm_tts_module import GlmTTS
+        return GlmTTS()
     else:
         raise ValueError(f"Unsupported TTS module: {name}")

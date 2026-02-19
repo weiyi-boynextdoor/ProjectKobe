@@ -3,6 +3,9 @@
 import os
 import argparse
 from zai import ZhipuAiClient
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = ZhipuAiClient(api_key=os.getenv("ZHIPU_API_KEY"))
 
