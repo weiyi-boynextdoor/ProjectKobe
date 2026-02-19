@@ -1,10 +1,13 @@
 import ollama
 from flask import Flask, request, jsonify, send_from_directory
-import torch
+from dotenv import load_dotenv
+import tts
+import argparse
 import time
-from tts import Qwen3TTS
 
-tts = Qwen3TTS()
+load_dotenv()
+
+tts_module = None
 
 class OllamaSession:
     def __init__(self, session_id, model_name, system_prompt=""):
@@ -66,7 +69,7 @@ def api_chat():
     print("Generating voice...")
     start_time = time.time()
     voice_file = f"response_{session_id}.wav"
-    tts.generate_voice_clone(response, f"audio_output/{voice_file}")
+    tts_module.generate_voice_clone(response, f"audio_output/{voice_file}")
     elapsed_time = time.time() - start_time
     print(f"generate_voice_clone took {elapsed_time:.2f} seconds")
     return jsonify({"response": response, "voice_file": voice_file})
@@ -88,8 +91,12 @@ def download_voice(filename):
 def voice_clone():
     ref_audio = "./audio_input/Mamba.wav"
     ref_text  = "Man! ha ha ha ha ha ha ha. What can I say? Mamba out!"
-    tts.create_voice_clone_prompt(ref_audio, ref_text)
+    tts_module.create_voice_clone_prompt(ref_audio, ref_text)
 
 if __name__ == "__main__":
+    argparser = argparse.ArgumentParser(description="Ollama TTS Server")
+    argparser.add_argument("--tts", type=str, default="qwen3")
+    args = argparser.parse_args()
+    tts_module = tts.get_tts_module(args.tts)
     voice_clone()
     app.run(host="0.0.0.0", port=8024)
