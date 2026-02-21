@@ -3,11 +3,12 @@ import ollama
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 import tts
-import argparse
+import configparser
 import time
 
 load_dotenv()
 
+config = configparser.ConfigParser()
 tts_module = None
 
 class OllamaSession:
@@ -67,20 +68,20 @@ def api_chat():
     session = session_manager.get_session(session_id)
     response = session.chat(user_message)
     print("Assistant response:", response)
-    print("Generating voice...")
-    start_time = time.time()
-    voice_file = f"response_{session_id}.wav"
-    tts_module.generate_voice_clone(response, f"audio_output/{voice_file}")
-    elapsed_time = time.time() - start_time
-    print(f"generate_voice_clone took {elapsed_time:.2f} seconds")
-    return jsonify({"response": response, "voice_file": voice_file})
+    if tts_module:
+        print("Generating voice...")
+        start_time = time.time()
+        voice_file = f"response_{session_id}.wav"
+        tts_module.generate_voice_clone(response, f"audio_output/{voice_file}")
+        elapsed_time = time.time() - start_time
+        print(f"generate_voice_clone took {elapsed_time:.2f} seconds")
+        return jsonify({"response": response, "voice_file": voice_file})
+    else:
+        return jsonify({"response": response})
 
 @app.route("/api/create_session", methods=["POST"])
 def api_create_session():
-    data = request.json
-    model_name = data.get("model", "gpt-oss:120b-cloud")
-    system_prompt = data.get("system_prompt", "")
-    session_id = session_manager.create_session(model_name, system_prompt)
+    session_id = session_manager.create_session(config.get("llm", "model"), config.get("llm", "system_prompt"))
     return jsonify({"session_id": session_id})
 
 @app.route('/download_voice/<filename>')
@@ -89,16 +90,17 @@ def download_voice(filename):
     # 但对于 UE5 来说，设为 False 直接流式读取内容通常更方便
     return send_from_directory("audio_output", filename, as_attachment=False)
 
-def voice_clone():
-    ref_audio = "./audio_input/Mamba.wav"
-    ref_text  = "Man! ha ha ha ha ha ha ha. What can I say? Mamba out!"
-    tts_module.create_voice_clone_prompt(ref_audio, ref_text)
-
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Ollama TTS Server")
-    argparser.add_argument("--tts", type=str, default="minimax")
-    args = argparser.parse_args()
-    tts_module = tts.get_tts_module(args.tts)
-    voice_clone()
-    os.makedirs("audio_output", exist_ok=True)
-    app.run(host="0.0.0.0", port=8024)
+    config.read("config/config.ini")
+    tts_type = config.get("tts", "type")
+    tts_module = tts.get_tts_module(tts_type)
+    if tts_module:
+        try:
+            ref_audio = config.get("tts", "ref_audio")
+            ref_text = config.get("tts", "ref_text")
+            tts_module.create_voice_clone_prompt(ref_audio, ref_text)
+        except Exception as e:
+            print(f"Error creating voice clone prompt: {e}")
+        os.makedirs("audio_output", exist_ok=True)
+
+    app.run(host=config.get("host", "ip"), port=config.getint("host", "port"))

@@ -2,13 +2,11 @@ import requests
 
 def create_session():
     url = "http://127.0.0.1:8024/api/create_session"
-    payload = {"model": "gpt-oss:120b-cloud"}
-    payload["system_prompt"] = "Play the role as Kobe Bryant and talk with me like daily conversations. Keep your words concise, less than 50 words. Speech only, without gestures or expressions."
 
     session_id = None
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json={})
 
         if response.status_code == 200:
             response_data = response.json()

@@ -9,5 +9,7 @@ def get_tts_module(name):
     elif name == "minimax":
         from .mninimax_tts_module import MinimaxTTS
         return MinimaxTTS()
+    elif name == "none":
+        return None
     else:
         raise ValueError(f"Unsupported TTS module: {name}")
