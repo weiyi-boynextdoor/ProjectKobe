@@ -3,12 +3,11 @@ import ollama
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 import tts
-import configparser
+import globals
 import time
 
 load_dotenv()
 
-config = configparser.ConfigParser()
 tts_module = None
 
 class OllamaSession:
@@ -81,7 +80,7 @@ def api_chat():
 
 @app.route("/api/create_session", methods=["POST"])
 def api_create_session():
-    session_id = session_manager.create_session(config.get("llm", "model"), config.get("llm", "system_prompt"))
+    session_id = session_manager.create_session(globals.config.get("llm", "model"), globals.config.get("llm", "system_prompt"))
     return jsonify({"session_id": session_id})
 
 @app.route('/download_voice/<filename>')
@@ -91,16 +90,10 @@ def download_voice(filename):
     return send_from_directory("audio_output", filename, as_attachment=False)
 
 if __name__ == "__main__":
-    config.read("config/config.ini")
-    tts_type = config.get("tts", "type")
+    globals.config.read("config/config.ini")
+    tts_type = globals.config.get("tts", "type")
     tts_module = tts.get_tts_module(tts_type)
     if tts_module:
-        try:
-            ref_audio = config.get("tts", "ref_audio")
-            ref_text = config.get("tts", "ref_text")
-            tts_module.create_voice_clone_prompt(ref_audio, ref_text)
-        except Exception as e:
-            print(f"Error creating voice clone prompt: {e}")
         os.makedirs("audio_output", exist_ok=True)
 
-    app.run(host=config.get("host", "ip"), port=config.getint("host", "port"))
+    app.run(host=globals.config.get("host", "ip"), port=globals.config.getint("host", "port"))

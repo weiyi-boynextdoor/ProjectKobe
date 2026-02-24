@@ -2,17 +2,15 @@
 
 import requests
 import os
+import globals
 
 class MinimaxTTS:
     def __init__(self):
         self.api_key = os.getenv("MINIMAX_API_KEY")
         self.url = "https://api.minimax.io/v1/t2a_v2"
-        self.voice_id = "moss_audio_0251081c-f530-11f0-8583-3ae0c9a1b09a"
+        self.voice_id = globals.config.get("tts", "voice_id")
 
-    def create_voice_clone_prompt(self, ref_audio, ref_text):
-        pass
-
-    def generate_voice_clone(self, text, output_path, ref_audio=None, ref_text=None, voice_clone_prompt=None):
+    def generate_voice_clone(self, text, output_path):
         payload = {
             "text": text,
             "model": "speech-2.8-turbo",

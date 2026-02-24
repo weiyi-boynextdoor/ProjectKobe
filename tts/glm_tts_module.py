@@ -8,10 +8,7 @@ class GlmTTS:
         api_key = os.getenv("ZHIPUAI_API_KEY", "")
         self.client = ZhipuAiClient(api_key=api_key)
 
-    def create_voice_clone_prompt(self, ref_audio, ref_text):
-        pass
-
-    def generate_voice_clone(self, text, output_path, ref_audio=None, ref_text=None, voice_clone_prompt=None):
+    def generate_voice_clone(self, text, output_path):
         response = self.client.audio.speech(
             model="glm-tts",
             input=text,
