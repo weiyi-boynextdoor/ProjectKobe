@@ -14,48 +14,62 @@ file_format = "mp3"
 class StreamAudioPlayer:
     def __init__(self):
         self.mpv_process = None
+        self.ffmpeg_process = None
 
-    def start_mpv(self):
-        """Start MPV player process"""
+    def start_processes(self):
+        """同时启动 FFmpeg 转换器和 MPV 播放器"""
         try:
+            # 1. 启动 FFmpeg: 输入 mp3 (pipe:0), 输出 wav (pipe:1)
+            # -f mp3: 指定输入格式
+            # -f wav: 指定输出格式
+            # -ar 32000: 采样率与你的 API 设置保持一致
+            ffmpeg_command = [
+                "ffmpeg", "-i", "pipe:0", 
+                "-f", "wav", "-ar", "32000", "-ac", "1", 
+                "pipe:1"
+            ]
+            self.ffmpeg_process = subprocess.Popen(
+                ffmpeg_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, # 捕获输出给 mpv
+                stderr=subprocess.DEVNULL
+            )
+
+            # 2. 启动 MPV: 输入接收 FFmpeg 的输出
             mpv_command = ["mpv", "--no-cache", "--no-terminal", "--", "fd://0"]
             self.mpv_process = subprocess.Popen(
                 mpv_command,
-                stdin=subprocess.PIPE,
+                stdin=self.ffmpeg_process.stdout, # 直接对接 ffmpeg 的输出
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            print("MPV player started")
+            
+            print("FFmpeg 转换器与 MPV 播放器已就绪")
             return True
         except FileNotFoundError:
-            print("Error: mpv not found. Please install mpv")
-            return False
-        except Exception as e:
-            print(f"Failed to start mpv: {e}")
+            print("错误: 未找到 ffmpeg 或 mpv，请确保已安装")
             return False
 
     def play_audio_chunk(self, hex_audio):
-        """Play audio chunk"""
+        """将 MP3 原始字节喂给 FFmpeg"""
         try:
-            if self.mpv_process and self.mpv_process.stdin:
+            if self.ffmpeg_process and self.ffmpeg_process.stdin:
                 audio_bytes = bytes.fromhex(hex_audio)
-                self.mpv_process.stdin.write(audio_bytes)
-                self.mpv_process.stdin.flush()
+                # 写入 ffmpeg 的 stdin 进行转码
+                self.ffmpeg_process.stdin.write(audio_bytes)
+                self.ffmpeg_process.stdin.flush()
                 return True
         except Exception as e:
-            print(f"Play failed: {e}")
+            print(f"转码/播放失败: {e}")
             return False
         return False
 
     def stop(self):
-        """Stop player"""
-        if self.mpv_process:
-            if self.mpv_process.stdin and not self.mpv_process.stdin.closed:
-                self.mpv_process.stdin.close()
-            try:
-                self.mpv_process.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self.mpv_process.terminate()
+        """停止所有进程"""
+        for p in [self.ffmpeg_process, self.mpv_process]:
+            if p:
+                if p.stdin: p.stdin.close()
+                p.terminate()
 
 async def establish_connection(api_key):
     """Establish WebSocket connection"""
@@ -83,7 +97,7 @@ async def start_task(websocket):
         "event": "task_start",
         "model": model,
         "voice_setting": {
-            "voice_id": "English_expressive_narrator",
+            "voice_id": "moss_audio_0251081c-f530-11f0-8583-3ae0c9a1b09a",
             "speed": 1,
             "vol": 1,
             "pitch": 0,
@@ -156,12 +170,12 @@ async def close_connection(websocket):
 
 async def main():
     API_KEY = os.getenv("MINIMAX_API_KEY")
-    TEXT = "The real danger is not that computers start thinking like people(sighs), but that people start thinking like computers. Computers can only help us with simple tasks."
+    TEXT = """Radiance Field methods have recently revolutionized novel-view synthesis of scenes captured with multiple photos or videos. However, achieving high visual quality still requires neural networks that are costly to train and render, while recent faster methods inevitably trade off speed for quality. For unbounded and complete scenes (rather than isolated objects) and 1080p resolution rendering, no current method can achieve real-time display rates."""
 
     player = StreamAudioPlayer()
 
     try:
-        if not player.start_mpv():
+        if not player.start_processes():
             return
 
         ws = await establish_connection(API_KEY)
