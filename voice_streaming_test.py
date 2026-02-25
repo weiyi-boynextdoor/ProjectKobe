@@ -12,39 +12,42 @@ model = "speech-2.8-hd"
 file_format = "mp3"
 
 class StreamAudioPlayer:
-    def __init__(self):
+    def __init__(self, convert_to_wav=False):
+        self.convert_to_wav = convert_to_wav
         self.mpv_process = None
         self.ffmpeg_process = None
 
     def start_processes(self):
         """同时启动 FFmpeg 转换器和 MPV 播放器"""
         try:
-            # 1. 启动 FFmpeg: 输入 mp3 (pipe:0), 输出 wav (pipe:1)
-            # -f mp3: 指定输入格式
-            # -f wav: 指定输出格式
-            # -ar 32000: 采样率与你的 API 设置保持一致
-            ffmpeg_command = [
-                "ffmpeg", "-i", "pipe:0", 
-                "-f", "wav", "-ar", "32000", "-ac", "1", 
-                "pipe:1"
-            ]
-            self.ffmpeg_process = subprocess.Popen(
-                ffmpeg_command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, # 捕获输出给 mpv
-                stderr=subprocess.DEVNULL
-            )
+            if self.convert_to_wav and file_format != "wav":
+                # 1. 启动 FFmpeg: 输入 mp3 (pipe:0), 输出 wav (pipe:1)
+                # -f mp3: 指定输入格式
+                # -f wav: 指定输出格式
+                # -ar 32000: 采样率与你的 API 设置保持一致
+                ffmpeg_command = [
+                    "ffmpeg", "-i", "pipe:0", 
+                    "-f", "wav", "-ar", "32000", "-ac", "1", 
+                    "pipe:1"
+                ]
+                self.ffmpeg_process = subprocess.Popen(
+                    ffmpeg_command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, # 捕获输出给 mpv
+                    stderr=subprocess.DEVNULL
+                )
 
             # 2. 启动 MPV: 输入接收 FFmpeg 的输出
             mpv_command = ["mpv", "--no-cache", "--no-terminal", "--", "fd://0"]
+            stdin = self.ffmpeg_process.stdout if self.ffmpeg_process else subprocess.PIPE
             self.mpv_process = subprocess.Popen(
                 mpv_command,
-                stdin=self.ffmpeg_process.stdout, # 直接对接 ffmpeg 的输出
+                stdin=stdin,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             
-            print("FFmpeg 转换器与 MPV 播放器已就绪")
+            print("converter & player started")
             return True
         except FileNotFoundError:
             print("错误: 未找到 ffmpeg 或 mpv，请确保已安装")
@@ -58,6 +61,12 @@ class StreamAudioPlayer:
                 # 写入 ffmpeg 的 stdin 进行转码
                 self.ffmpeg_process.stdin.write(audio_bytes)
                 self.ffmpeg_process.stdin.flush()
+                return True
+            elif self.mpv_process and self.mpv_process.stdin:
+                # 如果不转码，直接喂给 mpv
+                audio_bytes = bytes.fromhex(hex_audio)
+                self.mpv_process.stdin.write(audio_bytes)
+                self.mpv_process.stdin.flush()
                 return True
         except Exception as e:
             print(f"转码/播放失败: {e}")
@@ -145,9 +154,9 @@ async def continue_task_with_stream_play(websocket, text, player):
                     player.mpv_process.stdin.close()
 
                 # Save audio to file
-                with open(f"output.{file_format}", "wb") as f:
-                    f.write(audio_data)
-                print(f"Audio saved as output.{file_format}")
+                # with open(f"output.{file_format}", "wb") as f:
+                #     f.write(audio_data)
+                # print(f"Audio saved as output.{file_format}")
 
                 estimated_duration = total_audio_size * 0.0625 / 1000
                 wait_time = max(estimated_duration + 5, 10)
@@ -172,7 +181,7 @@ async def main():
     API_KEY = os.getenv("MINIMAX_API_KEY")
     TEXT = """Radiance Field methods have recently revolutionized novel-view synthesis of scenes captured with multiple photos or videos. However, achieving high visual quality still requires neural networks that are costly to train and render, while recent faster methods inevitably trade off speed for quality. For unbounded and complete scenes (rather than isolated objects) and 1080p resolution rendering, no current method can achieve real-time display rates."""
 
-    player = StreamAudioPlayer()
+    player = StreamAudioPlayer(convert_to_wav=True)
 
     try:
         if not player.start_processes():
