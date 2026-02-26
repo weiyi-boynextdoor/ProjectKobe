@@ -2,6 +2,8 @@ import os
 import json
 import ssl
 import asyncio
+import subprocess
+import threading
 import websockets
 import ollama
 from fastapi import FastAPI, WebSocket
@@ -106,38 +108,94 @@ async def start_tts_task(tts_ws, voice_id):
 
 
 async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
-    """Send text to Minimax and forward audio chunks to client as hex strings"""
+    """Send text to Minimax, convert MP3→WAV via ffmpeg, forward WAV chunks to client"""
     await tts_ws.send(json.dumps({
         "event": "task_continue",
         "text": text
     }))
 
+    # Start ffmpeg: stdin=mp3 stream, stdout=wav stream
+    try:
+        ffmpeg_proc = subprocess.Popen(
+            ["ffmpeg", "-f", "mp3", "-i", "pipe:0",
+             "-f", "wav", "-ar", "32000", "-ac", "1", "pipe:1"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        print("ffmpeg not found, falling back to raw mp3")
+        ffmpeg_proc = None
+
+    loop = asyncio.get_event_loop()
+    wav_queue: asyncio.Queue = asyncio.Queue()
+
+    def read_wav_chunks():
+        """Read WAV output from ffmpeg stdout in a background thread."""
+        while True:
+            chunk = ffmpeg_proc.stdout.read(4096)
+            if not chunk:
+                break
+            loop.call_soon_threadsafe(wav_queue.put_nowait, chunk)
+        loop.call_soon_threadsafe(wav_queue.put_nowait, None)  # sentinel
+
+    if ffmpeg_proc:
+        reader_thread = threading.Thread(target=read_wav_chunks, daemon=True)
+        reader_thread.start()
+
+    async def forward_wav():
+        """Forward WAV chunks from queue to client WebSocket."""
+        while True:
+            chunk = await wav_queue.get()
+            if chunk is None:
+                break
+            await client_ws.send_json({
+                "event": "audio_chunk",
+                "data": chunk.hex(),
+                "format": "wav"
+            })
+        await client_ws.send_json({"event": "audio_done"})
+
+    if ffmpeg_proc:
+        forward_task = asyncio.create_task(forward_wav())
+
     chunk_counter = 1
-    while True:
-        try:
+    try:
+        while True:
             response = json.loads(await tts_ws.recv())
 
             if "data" in response and "audio" in response["data"]:
                 audio_hex = response["data"]["audio"]
                 if audio_hex:
-                    print(f"Sending audio chunk #{chunk_counter}")
-                    await client_ws.send_json({
-                        "event": "audio_chunk",
-                        "data": audio_hex,
-                        "format": TTS_FILE_FORMAT
-                    })
+                    print(f"Converting chunk #{chunk_counter}")
+                    if ffmpeg_proc:
+                        ffmpeg_proc.stdin.write(bytes.fromhex(audio_hex))
+                        ffmpeg_proc.stdin.flush()
+                    else:
+                        await client_ws.send_json({
+                            "event": "audio_chunk",
+                            "data": audio_hex,
+                            "format": TTS_FILE_FORMAT
+                        })
                     chunk_counter += 1
 
             if response.get("is_final"):
-                print(f"TTS done: {chunk_counter - 1} chunks sent")
-                await client_ws.send_json({"event": "audio_done"})
-                return
+                print(f"TTS done: {chunk_counter - 1} chunks received")
+                break
 
-        except Exception as e:
-            print(f"TTS streaming error: {e}")
-            break
+    except Exception as e:
+        print(f"TTS streaming error: {e}")
+    finally:
+        if ffmpeg_proc:
+            try:
+                ffmpeg_proc.stdin.close()
+            except Exception:
+                pass
 
-    await client_ws.send_json({"event": "audio_done"})
+    if ffmpeg_proc:
+        await forward_task
+    else:
+        await client_ws.send_json({"event": "audio_done"})
 
 
 async def close_minimax_connection(tts_ws):

@@ -1,33 +1,62 @@
 import asyncio
 import json
+import subprocess
 import websockets
-import io
-import pygame
 
 WS_URL = "ws://127.0.0.1:8024/ws"
 
 
-def play_audio(chunks: list[bytes], fmt: str):
-    """Play audio chunks using pygame, or save to file as fallback."""
-    audio_data = b"".join(chunks)
-    try:
-        pygame.mixer.music.load(io.BytesIO(audio_data))
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.wait(100)
-    except Exception as e:
-        print(f"Error playing audio: {e}")
-        filename = f"response.{fmt}"
-        with open(filename, "wb") as f:
-            f.write(audio_data)
-        print(f"[Audio saved to {filename}]")
+class StreamAudioPlayer:
+    def __init__(self):
+        self.mpv_process = None
+
+    def start(self):
+        try:
+            self.mpv_process = subprocess.Popen(
+                ["mpv", "--no-cache", "--no-terminal", "--", "fd://0"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except FileNotFoundError:
+            print("[Error] mpv not found, please install mpv")
+            return False
+
+    def feed(self, hex_audio: str):
+        if self.mpv_process and self.mpv_process.stdin:
+            try:
+                self.mpv_process.stdin.write(bytes.fromhex(hex_audio))
+                self.mpv_process.stdin.flush()
+            except Exception as e:
+                print(f"[Audio feed error] {e}")
+
+    def finish(self):
+        """Close stdin so mpv knows the stream ended, then wait for playback."""
+        if self.mpv_process:
+            try:
+                if self.mpv_process.stdin:
+                    self.mpv_process.stdin.close()
+                self.mpv_process.wait()
+            except Exception as e:
+                print(f"[Audio finish error] {e}")
+            self.mpv_process = None
+
+    def stop(self):
+        if self.mpv_process:
+            try:
+                if self.mpv_process.stdin:
+                    self.mpv_process.stdin.close()
+                self.mpv_process.terminate()
+            except Exception:
+                pass
+            self.mpv_process = None
 
 
 async def main():
     print(f"Connecting to {WS_URL} ...")
     try:
         async with websockets.connect(WS_URL) as ws:
-            # Create session
             await ws.send(json.dumps({"action": "create_session"}))
             response = json.loads(await ws.recv())
 
@@ -56,8 +85,8 @@ async def main():
                     "message": user_input
                 }))
 
-                audio_chunks: list[bytes] = []
-                audio_format = "mp3"
+                player = StreamAudioPlayer()
+                player_started = False
 
                 while True:
                     msg = json.loads(await ws.recv())
@@ -68,17 +97,21 @@ async def main():
 
                     elif event == "audio_chunk":
                         audio_hex = msg.get("data", "")
-                        audio_format = msg.get("format", "mp3")
                         if audio_hex:
-                            audio_chunks.append(bytes.fromhex(audio_hex))
+                            if not player_started:
+                                player_started = player.start()
+                            if player_started:
+                                player.feed(audio_hex)
 
                     elif event == "audio_done":
-                        if audio_chunks:
-                            play_audio(audio_chunks, audio_format)
+                        if player_started:
+                            # finish() blocks until mpv is done playing
+                            await loop.run_in_executor(None, player.finish)
                         break
 
                     elif event == "error":
                         print(f"[Error] {msg.get('message')}")
+                        player.stop()
                         break
 
     except (websockets.exceptions.ConnectionRefusedError, OSError):
@@ -86,5 +119,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    pygame.mixer.init()
     asyncio.run(main())
