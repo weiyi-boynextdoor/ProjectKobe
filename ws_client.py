@@ -1,6 +1,8 @@
 import asyncio
 import json
 import websockets
+import io
+import pygame
 
 WS_URL = "ws://127.0.0.1:8024/ws"
 
@@ -9,14 +11,12 @@ def play_audio(chunks: list[bytes], fmt: str):
     """Play audio chunks using pygame, or save to file as fallback."""
     audio_data = b"".join(chunks)
     try:
-        import io
-        import pygame
-        pygame.mixer.init()
         pygame.mixer.music.load(io.BytesIO(audio_data))
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             pygame.time.wait(100)
-    except Exception:
+    except Exception as e:
+        print(f"Error playing audio: {e}")
         filename = f"response.{fmt}"
         with open(filename, "wb") as f:
             f.write(audio_data)
@@ -86,4 +86,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    pygame.mixer.init()
     asyncio.run(main())
