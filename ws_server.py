@@ -1,6 +1,7 @@
 import os
 import json
 import ssl
+import uuid
 import asyncio
 import subprocess
 import threading
@@ -50,15 +51,13 @@ class OllamaSession:
 
 class SessionManager:
     def __init__(self):
-        self.sessions: dict[int, OllamaSession] = {}
-        self.next_session_id = 1
+        self.sessions: dict[str, OllamaSession] = {}
 
     def get_session(self, session_id) -> OllamaSession:
         return self.sessions.get(session_id)
 
-    def create_session(self, model_name, system_prompt) -> int:
-        session_id = self.next_session_id
-        self.next_session_id += 1
+    def create_session(self, model_name, system_prompt) -> str:
+        session_id = str(uuid.uuid4())
         self.sessions[session_id] = OllamaSession(session_id, model_name, system_prompt)
         return session_id
 
