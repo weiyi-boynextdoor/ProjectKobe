@@ -214,12 +214,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("Client connected!")
 
-    api_key = os.getenv("MINIMAX_API_KEY")
-    try:
-        voice_id = globals.config.get("tts", "voice_id")
-    except Exception:
-        voice_id = ""
-    tts_enabled = bool(api_key and voice_id)
+    tts_enabled = False
+    if globals.config.get("tts", "type", fallback="none").lower() != "none":
+        api_key = os.getenv("MINIMAX_API_KEY")
+        try:
+            voice_id = globals.config.get("tts", "voice_id")
+        except Exception:
+            voice_id = ""
+        tts_enabled = bool(api_key and voice_id)
 
     try:
         while True:
