@@ -119,7 +119,7 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
     if target_file_format != MINIMAX_TTS_FILE_FORMAT:
         try:
             ffmpeg_proc = subprocess.Popen(
-                ["ffmpeg", "-f", "mp3", "-i", "pipe:0",
+                ["ffmpeg", "-f", MINIMAX_TTS_FILE_FORMAT, "-i", "pipe:0",
                 "-f", target_file_format, "-ar", "32000", "-ac", "1", "pipe:1"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -127,6 +127,8 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
             )
         except FileNotFoundError:
             print("ffmpeg not found, falling back to raw mp3")
+        except Exception as e:
+            print(f"ffmpeg error: {e}, falling back to raw mp3")
 
     loop = asyncio.get_event_loop()
     wav_queue: asyncio.Queue = asyncio.Queue()
@@ -156,7 +158,7 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
             })
         await client_ws.send_json({"event": "audio_done"})
 
-    await client_ws.send_json({"event": "audio_start", "format": target_file_format})
+    await client_ws.send_json({"event": "audio_start", "format": target_file_format, "sample_rate": 32000, "channel": 1, "bitrate": 128000})
     
     if ffmpeg_proc:
         forward_task = asyncio.create_task(forward_wav())
