@@ -16,7 +16,7 @@ import globals
 load_dotenv()
 
 TTS_MODEL = "speech-2.8-hd"
-TTS_FILE_FORMAT = "mp3"
+MINIMAX_TTS_FILE_FORMAT = "mp3"
 
 
 class OllamaSession:
@@ -97,7 +97,7 @@ async def start_tts_task(tts_ws, voice_id):
         "audio_setting": {
             "sample_rate": 32000,
             "bitrate": 128000,
-            "format": TTS_FILE_FORMAT,
+            "format": MINIMAX_TTS_FILE_FORMAT,
             "channel": 1
         }
     }
@@ -114,17 +114,19 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
     }))
 
     # Start ffmpeg: stdin=mp3 stream, stdout=wav stream
-    try:
-        ffmpeg_proc = subprocess.Popen(
-            ["ffmpeg", "-f", "mp3", "-i", "pipe:0",
-             "-f", "wav", "-ar", "32000", "-ac", "1", "pipe:1"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        print("ffmpeg not found, falling back to raw mp3")
-        ffmpeg_proc = None
+    ffmpeg_proc = None
+    target_file_format = globals.config.get("tts", "file_format", fallback=MINIMAX_TTS_FILE_FORMAT).lower()
+    if target_file_format != MINIMAX_TTS_FILE_FORMAT:
+        try:
+            ffmpeg_proc = subprocess.Popen(
+                ["ffmpeg", "-f", "mp3", "-i", "pipe:0",
+                "-f", target_file_format, "-ar", "32000", "-ac", "1", "pipe:1"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            print("ffmpeg not found, falling back to raw mp3")
 
     loop = asyncio.get_event_loop()
     wav_queue: asyncio.Queue = asyncio.Queue()
@@ -174,7 +176,7 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
                         await client_ws.send_json({
                             "event": "audio_chunk",
                             "data": audio_hex,
-                            "format": TTS_FILE_FORMAT
+                            "format": MINIMAX_TTS_FILE_FORMAT
                         })
                     chunk_counter += 1
 
