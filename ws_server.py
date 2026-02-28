@@ -146,7 +146,6 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
 
     async def forward_wav():
         """Forward WAV chunks from queue to client WebSocket."""
-        await client_ws.send_json({"event": "audio_start", "format": target_file_format})
         while True:
             chunk = await wav_queue.get()
             if chunk is None:
@@ -157,6 +156,8 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
             })
         await client_ws.send_json({"event": "audio_done"})
 
+    await client_ws.send_json({"event": "audio_start", "format": target_file_format})
+    
     if ffmpeg_proc:
         forward_task = asyncio.create_task(forward_wav())
 
