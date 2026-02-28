@@ -114,7 +114,7 @@ async def main():
                         player.stop()
                         break
 
-    except (websockets.exceptions.ConnectionRefusedError, OSError):
+    except (websockets.exceptions.ConnectionClosedError, OSError):
         print(f"Cannot connect to server at {WS_URL}")
 
 
