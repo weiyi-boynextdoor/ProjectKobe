@@ -57,15 +57,13 @@ async def main():
     print(f"Connecting to {WS_URL} ...")
     try:
         async with websockets.connect(WS_URL) as ws:
-            await ws.send(json.dumps({"action": "create_session"}))
             response = json.loads(await ws.recv())
 
             if response.get("event") != "session_created":
                 print(f"Failed to create session: {response}")
                 return
 
-            session_id = response["session_id"]
-            print(f"Session created (id={session_id}). Type your message (Ctrl+C to quit).\n")
+            print(f"Session created. Type your message (Ctrl+C to quit).\n")
 
             loop = asyncio.get_event_loop()
 
@@ -81,7 +79,6 @@ async def main():
 
                 await ws.send(json.dumps({
                     "action": "chat",
-                    "session_id": session_id,
                     "message": user_input
                 }))
 
@@ -96,6 +93,7 @@ async def main():
                         print(f"Assistant: {msg['content']}\n")
 
                     elif event == "audio_chunk":
+                        print(f"[Received audio chunk: {len(msg.get('data', '')) // 2} bytes]")
                         audio_hex = msg.get("data", "")
                         if audio_hex:
                             if not player_started:

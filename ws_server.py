@@ -20,8 +20,7 @@ MINIMAX_TTS_FILE_FORMAT = "mp3"
 
 
 class OllamaSession:
-    def __init__(self, session_id, model_name, system_prompt=""):
-        self.session_id = session_id
+    def __init__(self, model_name, system_prompt=""):
         self.model_name = model_name
         self.messages = []
         if system_prompt:
@@ -51,15 +50,13 @@ class OllamaSession:
 
 class SessionManager:
     def __init__(self):
-        self.sessions: dict[str, OllamaSession] = {}
+        self.sessions: dict[int, OllamaSession] = {}
 
-    def get_session(self, session_id) -> OllamaSession:
-        return self.sessions.get(session_id)
+    def get_session(self, websocket_id: int) -> OllamaSession:
+        return self.sessions.get(websocket_id)
 
-    def create_session(self, model_name, system_prompt) -> str:
-        session_id = str(uuid.uuid4())
-        self.sessions[session_id] = OllamaSession(session_id, model_name, system_prompt)
-        return session_id
+    def create_session(self, websocket_id, model_name, system_prompt) -> str:
+        self.sessions[websocket_id] = OllamaSession(model_name, system_prompt)
 
 
 session_manager = SessionManager()
@@ -219,6 +216,19 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("Client connected!")
 
+    websocket_id = id(websocket)
+
+    # create session immediately
+    session_manager.create_session(
+        websocket_id,
+        globals.config.get("llm", "model"),
+        globals.config.get("llm", "system_prompt")
+    )
+    await websocket.send_json({
+        "event": "session_created"
+    })
+    print(f"Session created: {websocket_id}")
+
     tts_enabled = False
     if globals.config.get("tts", "type", fallback="none").lower() != "none":
         api_key = os.getenv("MINIMAX_API_KEY")
@@ -234,22 +244,10 @@ async def websocket_endpoint(websocket: WebSocket):
             msg = json.loads(data)
             action = msg.get("action")
 
-            if action == "create_session":
-                session_id = session_manager.create_session(
-                    globals.config.get("llm", "model"),
-                    globals.config.get("llm", "system_prompt")
-                )
-                await websocket.send_json({
-                    "event": "session_created",
-                    "session_id": session_id
-                })
-                print(f"Session created: {session_id}")
-
-            elif action == "chat":
-                session_id = msg.get("session_id")
+            if action == "chat":
                 user_message = msg.get("message")
 
-                session = session_manager.get_session(session_id)
+                session = session_manager.get_session(websocket_id)
                 if not session:
                     await websocket.send_json({"event": "error", "message": "Session not found"})
                     continue
