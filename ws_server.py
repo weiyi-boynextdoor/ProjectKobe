@@ -6,57 +6,27 @@ import asyncio
 import subprocess
 import threading
 import websockets
-import ollama
 from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 import uvicorn
 from dotenv import load_dotenv
 import globals
+from llm.llm_session import LLMSession, create_llm_session
 
 load_dotenv()
 
 TTS_MODEL = "speech-2.8-hd"
 MINIMAX_TTS_FILE_FORMAT = "mp3"
 
-
-class OllamaSession:
-    def __init__(self, model_name, system_prompt=""):
-        self.model_name = model_name
-        self.messages = []
-        if system_prompt:
-            self.messages.append({"role": "system", "content": system_prompt})
-
-    def chat(self, user_message):
-        self.messages.append({"role": "user", "content": user_message})
-
-        stream = ollama.chat(
-            model=self.model_name,
-            messages=self.messages,
-            stream=True,
-            options={
-                "num_ctx": 8192,
-                "temperature": 0.7,
-            }
-        )
-
-        assistant_reply = ""
-        for chunk in stream:
-            content = chunk["message"]["content"]
-            assistant_reply += content
-
-        self.messages.append({"role": "assistant", "content": assistant_reply})
-        return assistant_reply
-
-
 class SessionManager:
     def __init__(self):
-        self.sessions: dict[int, OllamaSession] = {}
+        self.sessions: dict[int, LLMSession] = {}
 
-    def get_session(self, websocket_id: int) -> OllamaSession:
+    def get_session(self, websocket_id: int) -> LLMSession:
         return self.sessions.get(websocket_id)
 
     def create_session(self, websocket_id, model_name, system_prompt) -> str:
-        self.sessions[websocket_id] = OllamaSession(model_name, system_prompt)
+        self.sessions[websocket_id] = create_llm_session(globals.config.get("llm", "type"), model_name, system_prompt)
 
 
 session_manager = SessionManager()
@@ -227,7 +197,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.send_json({
         "event": "session_created"
     })
-    print(f"Session created: {websocket_id}")
 
     tts_enabled = False
     if globals.config.get("tts", "type", fallback="none").lower() != "none":
@@ -252,7 +221,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"event": "error", "message": "Session not found"})
                     continue
 
-                # Run ollama chat in thread pool to avoid blocking the event loop
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, session.chat, user_message)
                 print(f"Assistant: {response}")
