@@ -5,6 +5,7 @@ import uuid
 import asyncio
 import subprocess
 import threading
+import logging
 import websockets
 from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
@@ -17,6 +18,19 @@ load_dotenv()
 
 TTS_MODEL = "speech-2.8-hd"
 MINIMAX_TTS_FILE_FORMAT = "mp3"
+LOG_DIR = "log"
+LOG_FILE = os.path.join(LOG_DIR, "ws_server.log")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger("ws_server")
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.propagate = False
 
 class SessionManager:
     def __init__(self):
@@ -44,7 +58,7 @@ async def establish_minimax_connection(api_key):
     ws = await websockets.connect(url, additional_headers=headers, ssl=ssl_context)
     connected = json.loads(await ws.recv())
     if connected.get("event") == "connected_success":
-        print("Minimax TTS connected")
+        logger.info("Minimax TTS connected")
         return ws
     return None
 
@@ -93,9 +107,9 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
-            print("ffmpeg not found, falling back to raw mp3")
-        except Exception as e:
-            print(f"ffmpeg error: {e}, falling back to raw mp3")
+            logger.warning("ffmpeg not found, falling back to raw mp3")
+        except Exception:
+            logger.exception("ffmpeg error, falling back to raw mp3")
 
     loop = asyncio.get_event_loop()
     wav_queue: asyncio.Queue = asyncio.Queue()
@@ -138,7 +152,7 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
             if "data" in response and "audio" in response["data"]:
                 audio_hex = response["data"]["audio"]
                 if audio_hex:
-                    print(f"Converting chunk #{chunk_counter}")
+                    print("Converting audio chunk #%s", chunk_counter)
                     if ffmpeg_proc:
                         ffmpeg_proc.stdin.write(bytes.fromhex(audio_hex))
                         ffmpeg_proc.stdin.flush()
@@ -151,11 +165,11 @@ async def stream_tts_to_client(tts_ws, text, client_ws: WebSocket):
                     chunk_counter += 1
 
             if response.get("is_final"):
-                print(f"TTS done: {chunk_counter - 1} chunks received")
+                logger.info("TTS done: %s chunks received", chunk_counter - 1)
                 break
 
-    except Exception as e:
-        print(f"TTS streaming error: {e}")
+    except Exception:
+        logger.exception("TTS streaming error")
     finally:
         if ffmpeg_proc:
             try:
@@ -184,9 +198,11 @@ app = FastAPI()
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("Client connected!")
 
     websocket_id = id(websocket)
+    client_host = websocket.client.host if websocket.client else "unknown"
+    client_port = websocket.client.port if websocket.client else "unknown"
+    logger.info("Client connected: websocket_id=%s client=%s:%s", websocket_id, client_host, client_port)
 
     # create session immediately
     session_manager.create_session(
@@ -215,6 +231,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if action == "chat":
                 user_message = msg.get("message")
+                logger.info("User input: websocket_id=%s message=%s", websocket_id, user_message)
 
                 session = session_manager.get_session(websocket_id)
                 if not session:
@@ -223,7 +240,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, session.chat, user_message)
-                print(f"Assistant: {response}")
+                logger.info("LLM reply: websocket_id=%s response=%s", websocket_id, response)
 
                 await websocket.send_json({
                     "event": "text_response",
@@ -237,10 +254,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         if tts_ws and await start_tts_task(tts_ws, voice_id):
                             await stream_tts_to_client(tts_ws, response, websocket)
                         else:
-                            print("TTS task start failed")
+                            logger.warning("TTS task start failed")
                             await websocket.send_json({"event": "audio_done"})
-                    except Exception as e:
-                        print(f"TTS error: {e}")
+                    except Exception:
+                        logger.exception("TTS error")
                         await websocket.send_json({"event": "audio_done"})
                     finally:
                         await close_minimax_connection(tts_ws)
@@ -251,9 +268,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"event": "error", "message": f"Unknown action: {action}"})
 
     except WebSocketDisconnect:
-        print("Client disconnected")
-    except Exception as e:
-        print(f"Connection error: {e}")
+        logger.info("Client disconnected: websocket_id=%s client=%s:%s", websocket_id, client_host, client_port)
+    except Exception:
+        logger.exception("Connection error: websocket_id=%s client=%s:%s", websocket_id, client_host, client_port)
 
 
 if __name__ == "__main__":
