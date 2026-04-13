@@ -195,7 +195,7 @@ async def close_minimax_connection(tts_ws):
 app = FastAPI()
 
 
-@app.websocket("/ws")
+@app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 

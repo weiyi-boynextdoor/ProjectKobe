@@ -3,7 +3,7 @@ import json
 import subprocess
 import websockets
 
-WS_URL = "ws://127.0.0.1:8024/ws"
+WS_URL = "ws://127.0.0.1:8024"
 
 
 class StreamAudioPlayer:
